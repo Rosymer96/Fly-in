@@ -1,0 +1,38 @@
+# Bytecode and python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Cache tools
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.flake8_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Packages
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Test coverage
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# System
+.DS_Store
+Thumbs.db
+
+# Simulation logs
+*.log
