@@ -32,3 +32,7 @@ class Zone:
     color: str | None
     max_drones: int
     current_occupants: set[int]
+
+    def has_capacity(self, extra: int = 1) -> bool:
+        """Return True if the zone has capacity for `extra` more drones."""
+        return len(self.current_occupants) + extra <= self.max_drones
