@@ -1,4 +1,8 @@
-class ZoneType:
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class ZoneType(Enum):
     """Zone type enumeration."""
 
     NORMAL = "normal"
@@ -7,23 +11,22 @@ class ZoneType:
     PRIORITY = "priority"
 
     def movement_cost(self) -> int:
-        """Turns required to move into a zone of this type.
-
-        Blocked zones have no valid cost — callers must check
-        is_blocked() before calling this.
-        """
-        costs = {
-            ZoneType.NORMAL: 1,
-            ZoneType.RESTRICTED: 2,
-            ZoneType.PRIORITY: 1,
-        }
-        return costs[self]
+        if self is ZoneType.BLOCKED:
+            raise ValueError("blocked zones have no movement cost")
+        return _MOVEMENT_COSTS[self]
 
     def is_blocked(self) -> bool:
-        """Return True if this zone type is blocked."""
         return self is ZoneType.BLOCKED
 
 
+_MOVEMENT_COSTS: dict[ZoneType, int] = {
+    ZoneType.NORMAL: 1,
+    ZoneType.RESTRICTED: 2,
+    ZoneType.PRIORITY: 1,
+}
+
+
+@dataclass
 class Zone:
     name: str
     x: int
@@ -31,11 +34,11 @@ class Zone:
     zone_type: ZoneType
     color: str | None
     max_drones: int
-    current_occupants: set[int]
+    current_occupants: set[int] = field(default_factory=set)
     unlimited_capacity: bool = False
 
-    def has_capacity(self, extra: int = 1) -> bool:
-        """Return True if the zone has capacity for `extra` more drones."""
+    def has_capacity(self) -> bool:
+        """Return whether the zone can accept another drone right now."""
         if self.unlimited_capacity:
             return True
-        return len(self.current_occupants) + extra <= self.max_drones
+        return len(self.current_occupants) < self.max_drones

@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from models.zone import Zone
 
 
+@dataclass
 class Drone:
     id: int
     current_zone: Zone
