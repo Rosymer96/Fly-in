@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from functools import partial
-from models import Zone, Connection
+from xml.etree.ElementTree import ParseError
+from models import Zone, Connection, ZoneType
 
 
 class ParserError(Exception):
@@ -163,6 +164,21 @@ class MapParser:
             )
         handler(self, line_number, rest, metadata)
 
+    def _parse_positive_int(
+        self,
+        line_number: int,
+        raw_value: str,
+        field_name: str
+    ) -> int:
+        """Parse and validate a metadata value expected to be a
+        positive integer."""
+        if not raw_value.isdigit() or int(raw_value) < 1:
+            raise ParserError(
+                line_number,
+                f"{field_name} must be a positive integer, got {raw_value!r}",
+            )
+        return int(raw_value)
+
     def _parse_zone(
         self,
         line_number: int,
@@ -190,5 +206,108 @@ class MapParser:
                 f"expected '<name> <x> <y>', got {rest!r}",
             )
         name, x_str, y_str = tokens
+
+        if "-" in name or " " in name:
+            raise ParserError(line_number, f"zone name {name!r} cannot contain '-' or spaces")
+
+        if name in self._zones:
+            raise ParserError(line_number, f"duplicate zone name {name!r}")
+
+        if not x_str.lstrip("-").isdigit() or not y_str.lstrip("-").isdigit():
+            raise ParseError(
+                line_number,
+                f"coordinates must be integers, got {x_str!r} {y_str!r}"
+            )
+
+        zone_type_str = metadata.get("zone", "normal")
+        try:
+            zone_type = ZoneType(zone_type_str)
+        except ValueError:
+            raise ParserError(
+                line_number,
+                f"invalid zone type {zone_type_str!r}, must be one of "
+                f"{', '.join(z.value for z in ZoneType)}",
+            )
+
+        is_hub_boundary = kind in ("start_hub", "end_hub")
+        max_drones = self._parse_positive_int(line_number, metadata.get("max_drones", "1"), "max_drones")
+
+        zone = Zone(
+            name=name,
+            x=int(x_str),
+            y=int(y_str),
+            zone_type=zone_type,
+            color=metadata.get("color"),
+            max_drones=max_drones,
+            unlimited_capacity=is_hub_boundary,
+        )
+
+        self._zones[name] = zone
+
+        if kind == "start_hub":
+            if self._start is not None:
+                raise ParserError(line_number, "multiple start_hub definitions")
+            self._start = zone
+        elif kind == "end_hub":
+            if self._end is not None:
+                raise ParserError(line_number, "multiple end_hub definitions")
+            self._end = zone
+
+    def _parse_connection(
+        self,
+        line_number: int,
+        rest: str,
+        metadata: dict[str, str]
+    ) -> None:
+        """Parse a 'connection: name1-name2 [metadata]' line.
+
+        Raises:
+            ParseError: on malformed syntax, a reference to an undefined
+            zone, or a duplicate connection (a-b same as b-a).
+        """
+        if "-" not in rest:
+            raise ParserError(
+                line_number,
+                f"connection must be in the form 'zoneA-zoneB', got {rest!r}",
+            )
+        name1, _, name2 = rest.partition("-")
+        name1, name2 = name1.strip(), name2.strip()
+
+        if not name1 or not name2:
+            raise ParserError(
+                line_number,
+                f"connection must have two zone names, got {rest!r}",
+            )
+        if name1 not in self._zones:
+            raise ParserError(
+                line_number,
+                f"connection references undefined zone {name1!r}",
+            )
+        if name2 not in self._zones:
+            raise ParserError(
+                line_number,
+                f"connection references undefined zone {name2!r}",
+            )
+        pair_key = frozenset({name1, name2})
+        if pair_key in self._seen_connections:
+            raise ParserError(
+                line_number,
+                f"duplicate connection between {name1!r} and {name2!r}",
+            )
+        self._seen_connections.add(pair_key)
+
+        max_link_capacity = self._parse_positive_int(line_number, metadata.get("max_link_capacity", "1"), "max_link_capacity")
+
+        connection = Connection(
+            zone_a=self._zones[name1],
+            zone_b=self._zones[name2],
+            max_link_capacity=max_link_capacity,
+        )
+        self._connections.append(connection)
+
+        
+        
+        
+
         
 
