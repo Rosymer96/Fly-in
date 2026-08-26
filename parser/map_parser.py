@@ -1,7 +1,8 @@
 from collections.abc import Callable
 from functools import partial
-from xml.etree.ElementTree import ParseError
-from models import Zone, Connection, ZoneType
+
+from git import ParseError
+from models import Zone, Connection, ZoneType, Graph
 
 
 class ParserError(Exception):
@@ -208,7 +209,10 @@ class MapParser:
         name, x_str, y_str = tokens
 
         if "-" in name or " " in name:
-            raise ParserError(line_number, f"zone name {name!r} cannot contain '-' or spaces")
+            raise ParserError(
+                line_number,
+                f"zone name {name!r} cannot contain '-' or spaces"
+            )
 
         if name in self._zones:
             raise ParserError(line_number, f"duplicate zone name {name!r}")
@@ -230,7 +234,12 @@ class MapParser:
             )
 
         is_hub_boundary = kind in ("start_hub", "end_hub")
-        max_drones = self._parse_positive_int(line_number, metadata.get("max_drones", "1"), "max_drones")
+        max_drones = self._parse_positive_int
+        (
+            line_number,
+            metadata.get("max_drones", "1"),
+            "max_drones"
+        )
 
         zone = Zone(
             name=name,
@@ -246,7 +255,10 @@ class MapParser:
 
         if kind == "start_hub":
             if self._start is not None:
-                raise ParserError(line_number, "multiple start_hub definitions")
+                raise ParserError(
+                    line_number,
+                    "multiple start_hub definitions"
+                )
             self._start = zone
         elif kind == "end_hub":
             if self._end is not None:
@@ -296,7 +308,11 @@ class MapParser:
             )
         self._seen_connections.add(pair_key)
 
-        max_link_capacity = self._parse_positive_int(line_number, metadata.get("max_link_capacity", "1"), "max_link_capacity")
+        max_link_capacity = self._parse_positive_int(
+            line_number,
+            metadata.get("max_link_capacity", "1"),
+            "max_link_capacity"
+        )
 
         connection = Connection(
             zone_a=self._zones[name1],
@@ -305,9 +321,43 @@ class MapParser:
         )
         self._connections.append(connection)
 
-        
-        
-        
+    def finalize(
+        self,
+        line_number: int
+    ) -> tuple[Graph, int]:
+        """Run whole-file validations and build the final Graph.
 
-        
+        These checks can't run line-by-line because they depend on
+        having seen the entire file first (e.g. "exactly one start_hub").
+        """
+        if self._nb_drones is None:
+            raise ParseError(line_number, "missing nb_drones line")
+        if self._start is None:
+            raise ParseError(line_number, "no start_hub defined")
+        if self._end is None:
+            raise ParseError(line_number, "no end_hub defined")
 
+        graph = Graph(
+            zones=self._zones,
+            connections=self._connections,
+            start=self._start,
+            end=self._end,
+        )
+        return graph, self._nb_drones
+
+    def parse(
+        self,
+        file_path: str
+    ) -> tuple[Graph, int]:
+        """Parse a map file and return (graph, nb_drones).
+
+        Raises:
+            ParseError: on any structural or semantic violation.
+            FileNotFoundError: if filepath doesn't exist (not wrapped,
+            since it's a filesystem error, not a format error).
+        """
+        with open(file_path, "r", encoding="utf-8") as handle:
+            for line_number, raw_line in enumerate(handle, start=1):
+                self._parse_line(line_number, raw_line)
+
+            return self._finalize(line_number)
