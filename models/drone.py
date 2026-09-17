@@ -8,8 +8,8 @@ class Drone:
     current_zone: Zone
     path: list[Zone]
     next_index: int = 1
-    in_transit_to: Zone | None
-    turns_remaining: int
+    in_transit_to: Zone | None = None
+    turns_remaining: int = 0
     delivered: bool = False
 
     def next_target(self) -> Zone | None:

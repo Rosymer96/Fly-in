@@ -1,18 +1,16 @@
 from collections.abc import Callable
 from functools import partial
 
-from git import ParseError
 from models import Zone, Connection, ZoneType, Graph
 
 
 class ParserError(Exception):
     """Base class for parser errors."""
 
-
-def __init__(self, line_number: int, message: str) -> None:
-    self.line_number = line_number
-    self.message = message
-    super().__init__(f"Line {line_number}: {message}")
+    def __init__(self, line_number: int, message: str) -> None:
+        self.line_number = line_number
+        self.message = message
+        super().__init__(f"Line {line_number}: {message}")
 
 
 class MapParser:
@@ -85,7 +83,7 @@ class MapParser:
         return line if line else None
 
     def _split_metadata(self, line_number: int, line: str) -> tuple[str, str]:
-        if "[" in line:
+        if "[" not in line:
             return line.strip(), ""
 
         body, _, remainder = line.partition("[")
@@ -163,7 +161,7 @@ class MapParser:
                 line_number,
                 f"unrecognized line prefix {prefix!r}",
             )
-        handler(self, line_number, rest, metadata)
+        handler(line_number, rest, metadata)
 
     def _parse_positive_int(
         self,
@@ -218,7 +216,7 @@ class MapParser:
             raise ParserError(line_number, f"duplicate zone name {name!r}")
 
         if not x_str.lstrip("-").isdigit() or not y_str.lstrip("-").isdigit():
-            raise ParseError(
+            raise ParserError(
                 line_number,
                 f"coordinates must be integers, got {x_str!r} {y_str!r}"
             )
@@ -234,8 +232,7 @@ class MapParser:
             )
 
         is_hub_boundary = kind in ("start_hub", "end_hub")
-        max_drones = self._parse_positive_int
-        (
+        max_drones = self._parse_positive_int(
             line_number,
             metadata.get("max_drones", "1"),
             "max_drones"
@@ -321,6 +318,24 @@ class MapParser:
         )
         self._connections.append(connection)
 
+    def _parse_nb_drones(
+        self, line_number: int, rest: str, metadata: dict[str, str]
+    ) -> None:
+        """Parse the 'nb_drones: <positive_integer>' line.
+
+        Raises:
+            ParseError: if not a positive integer, or if this line
+            appears more than once in the file.
+        """
+        if self._nb_drones is not None:
+            raise ParserError(line_number, "nb_drones defined more than once")
+        if not rest.isdigit() or int(rest) < 1:
+            raise ParserError(
+                line_number,
+                f"nb_drones must be a positive integer, got {rest!r}"
+            )
+        self._nb_drones = int(rest)
+
     def finalize(
         self,
         line_number: int
@@ -331,12 +346,11 @@ class MapParser:
         having seen the entire file first (e.g. "exactly one start_hub").
         """
         if self._nb_drones is None:
-            raise ParseError(line_number, "missing nb_drones line")
+            raise ParserError(line_number, "missing nb_drones line")
         if self._start is None:
-            raise ParseError(line_number, "no start_hub defined")
+            raise ParserError(line_number, "no start_hub defined")
         if self._end is None:
-            raise ParseError(line_number, "no end_hub defined")
-
+            raise ParserError(line_number, "no end_hub defined")
         graph = Graph(
             zones=self._zones,
             connections=self._connections,
