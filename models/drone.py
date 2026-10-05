@@ -1,9 +1,21 @@
 from dataclasses import dataclass
-from models.zone import Zone
+from .zone import Zone
 
 
 @dataclass
 class Drone:
+    """A drone travelling along a planned path of zones.
+
+    Attributes:
+        id: unique drone identifier.
+        current_zone: zone where the drone currently is.
+        path: ordered zones the drone must visit.
+        next_index: index in path of the next zone to reach.
+        in_transit_to: destination while crossing a restricted link.
+        turns_remaining: turns left to finish the current movement.
+        delivered: True once the drone has reached the end zone.
+    """
+
     id: int
     current_zone: Zone
     path: list[Zone]

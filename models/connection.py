@@ -1,13 +1,22 @@
 from dataclasses import dataclass, field
-from models.zone import Zone
+from .zone import Zone
 
 
 @dataclass
 class Connection:
+    """A bidirectional link between two zones.
+
+    Attributes:
+        zone_a: one endpoint of the link.
+        zone_b: the other endpoint of the link.
+        max_link_capacity: maximum drones that can traverse it at once.
+        current_traversals: ids of the drones currently on the link.
+    """
+
     zone_a: Zone
     zone_b: Zone
     max_link_capacity: int
-    current_traversals: int = field(default_factory=set)
+    current_traversals: set[int] = field(default_factory=set)
 
     def other(self, zone: Zone) -> Zone:
         """Given one endpoint, return the opposite one.

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Callable
 from functools import partial
 
@@ -8,6 +9,12 @@ class ParserError(Exception):
     """Base class for parser errors."""
 
     def __init__(self, line_number: int, message: str) -> None:
+        """Store the failing line and cause, and build the message.
+
+        Args:
+            line_number: line of the map file where the error occurred.
+            message: human-readable description of the cause.
+        """
         self.line_number = line_number
         self.message = message
         super().__init__(f"Line {line_number}: {message}")
@@ -17,6 +24,7 @@ class MapParser:
     """Parser for map files."""
 
     def __init__(self) -> None:
+        """Create a parser with empty state, ready to read one map file."""
         self._zones: dict[str, Zone] = {}
         self._connections: list[Connection] = []
         self._start: Zone | None = None
@@ -45,7 +53,7 @@ class MapParser:
             which keys are expected and what type each should be.
 
         Raises:
-            ParseError: if any token isn't a well-formed key=value pair.
+            ParserError: if any token isn't a well-formed key=value pair.
         """
         metadata: dict[str, str] = {}
         if not raw_metadata.strip():
@@ -70,7 +78,7 @@ class MapParser:
             metadata[key] = value
         return metadata
 
-    def _strip_comments(self, line: str) -> str:
+    def _strip_comments(self, line: str) -> str | None:
         """Remove comments from a line.
 
         Args:
@@ -83,6 +91,20 @@ class MapParser:
         return line if line else None
 
     def _split_metadata(self, line_number: int, line: str) -> tuple[str, str]:
+        """Separate a line into its body and its bracketed metadata.
+
+        Args:
+            line_number: current line, used only for error reporting.
+            line: the line with comments already removed.
+
+        Returns:
+            A tuple (body, raw_metadata). raw_metadata is an empty string
+            when the line has no metadata block.
+
+        Raises:
+            ParserError: if the closing ']' is missing or there is extra
+            content after it.
+        """
         if "[" not in line:
             return line.strip(), ""
 
@@ -111,7 +133,7 @@ class MapParser:
         Returns (prefix, rest) e.g. ("hub", "corridorA 4 3").
 
         Raises:
-            ParseError: if the line has no recognizable "keyword:" prefix.
+            ParserError: if the line has no recognizable "keyword:" prefix.
         """
         if ":" not in body:
             raise ParserError(
@@ -155,6 +177,12 @@ class MapParser:
         prefix, rest = self._split_prefix(line_number, body)
         metadata = self._parse_metadata(line_number, raw_metadata)
 
+        if self._nb_drones is None and prefix != "nb_drones":
+            raise ParserError(
+                line_number,
+                "first line must define nb_drones",
+            )
+
         handler = self._handlers().get(prefix)
         if handler is None:
             raise ParserError(
@@ -162,6 +190,25 @@ class MapParser:
                 f"unrecognized line prefix {prefix!r}",
             )
         handler(line_number, rest, metadata)
+
+    def _check_known_keys(
+        self,
+        line_number: int,
+        metadata: dict[str, str],
+        allowed: set[str],
+    ) -> None:
+        """Reject metadata keys that this kind of line does not support.
+
+        Raises:
+            ParserError: if metadata contains a key not in `allowed`.
+        """
+        for key in metadata:
+            if key not in allowed:
+                raise ParserError(
+                    line_number,
+                    f"unknown metadata key {key!r}, allowed: "
+                    f"{', '.join(sorted(allowed))}",
+                )
 
     def _parse_positive_int(
         self,
@@ -171,7 +218,7 @@ class MapParser:
     ) -> int:
         """Parse and validate a metadata value expected to be a
         positive integer."""
-        if not raw_value.isdigit() or int(raw_value) < 1:
+        if not re.fullmatch(r"[0-9]+", raw_value) or int(raw_value) < 1:
             raise ParserError(
                 line_number,
                 f"{field_name} must be a positive integer, got {raw_value!r}",
@@ -194,10 +241,13 @@ class MapParser:
                 is set and whether this zone is tracked as start/end.
 
         Raises:
-            ParseError: on malformed coordinates, unknown zone name reuse,
+            ParserError: on malformed coordinates, unknown zone name reuse,
             an invalid zone type, a non-positive max_drones, or a second
             start_hub/end_hub appearing in the file.
         """
+        self._check_known_keys(
+            line_number, metadata, {"zone", "color", "max_drones"}
+        )
         tokens = rest.split()
         if len(tokens) != 3:
             raise ParserError(
@@ -215,7 +265,8 @@ class MapParser:
         if name in self._zones:
             raise ParserError(line_number, f"duplicate zone name {name!r}")
 
-        if not x_str.lstrip("-").isdigit() or not y_str.lstrip("-").isdigit():
+        if not (re.fullmatch(r"-?[0-9]+", x_str)
+                and re.fullmatch(r"-?[0-9]+", y_str)):
             raise ParserError(
                 line_number,
                 f"coordinates must be integers, got {x_str!r} {y_str!r}"
@@ -232,11 +283,14 @@ class MapParser:
             )
 
         is_hub_boundary = kind in ("start_hub", "end_hub")
-        max_drones = self._parse_positive_int(
-            line_number,
-            metadata.get("max_drones", "1"),
-            "max_drones"
-        )
+        if is_hub_boundary:
+            max_drones = 1
+        else:
+            max_drones = self._parse_positive_int(
+                line_number,
+                metadata.get("max_drones", "1"),
+                "max_drones"
+            )
 
         zone = Zone(
             name=name,
@@ -271,9 +325,10 @@ class MapParser:
         """Parse a 'connection: name1-name2 [metadata]' line.
 
         Raises:
-            ParseError: on malformed syntax, a reference to an undefined
+            ParserError: on malformed syntax, a reference to an undefined
             zone, or a duplicate connection (a-b same as b-a).
         """
+        self._check_known_keys(line_number, metadata, {"max_link_capacity"})
         if "-" not in rest:
             raise ParserError(
                 line_number,
@@ -296,6 +351,11 @@ class MapParser:
             raise ParserError(
                 line_number,
                 f"connection references undefined zone {name2!r}",
+            )
+        if name1 == name2:
+            raise ParserError(
+                line_number,
+                f"connection cannot link zone {name1!r} to itself",
             )
         pair_key = frozenset({name1, name2})
         if pair_key in self._seen_connections:
@@ -324,17 +384,14 @@ class MapParser:
         """Parse the 'nb_drones: <positive_integer>' line.
 
         Raises:
-            ParseError: if not a positive integer, or if this line
+            ParserError: if not a positive integer, or if this line
             appears more than once in the file.
         """
         if self._nb_drones is not None:
             raise ParserError(line_number, "nb_drones defined more than once")
-        if not rest.isdigit() or int(rest) < 1:
-            raise ParserError(
-                line_number,
-                f"nb_drones must be a positive integer, got {rest!r}"
-            )
-        self._nb_drones = int(rest)
+        self._nb_drones = self._parse_positive_int(
+            line_number, rest, "nb_drones"
+        )
 
     def finalize(
         self,
@@ -366,12 +423,12 @@ class MapParser:
         """Parse a map file and return (graph, nb_drones).
 
         Raises:
-            ParseError: on any structural or semantic violation.
-            FileNotFoundError: if filepath doesn't exist (not wrapped,
+            ParserError: on any structural or semantic violation.
+            FileNotFoundError: if file_path doesn't exist (not wrapped,
             since it's a filesystem error, not a format error).
         """
+        line_number = 0
         with open(file_path, "r", encoding="utf-8") as handle:
             for line_number, raw_line in enumerate(handle, start=1):
                 self._parse_line(line_number, raw_line)
-
-            return self._finalize(line_number)
+        return self.finalize(line_number)

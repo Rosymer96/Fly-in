@@ -3,22 +3,26 @@ import pytest
 from parser import MapParser, ParserError
 
 # tests/test_parser.py
-import pytest
-from models import Zone, ZoneType
+from models import ZoneType
 
 
 @pytest.fixture
 def parser() -> MapParser:
-    return MapParser()
+    """A parser that already read the mandatory nb_drones first line."""
+    p = MapParser()
+    p._parse_line(1, "nb_drones: 1")
+    return p
 
 
 @pytest.fixture
 def parser_with_zones() -> MapParser:
     """A parser that already has two zones defined, for connection tests."""
     p = MapParser()
+    p._parse_line(1, "nb_drones: 1")
     p._parse_line(1, "hub: a 0 0")
     p._parse_line(2, "hub: b 1 0")
     return p
+
 
 def test_parse_metadata_empty() -> None:
     parser = MapParser()
@@ -39,7 +43,9 @@ def test_parse_metadata_malformed_token_raises() -> None:
     with pytest.raises(ParserError):
         parser._parse_metadata(1, "zone")  # falta el '='
 
+
 #Test validos
+
 
 def test_parse_zone_hub_minimal(parser: MapParser) -> None:
     parser._parse_line(1, "hub: roof1 3 4")
@@ -114,4 +120,4 @@ def test_non_integer_coordinates_raises(parser: MapParser) -> None:
 
 def test_wrong_token_count_raises(parser: MapParser) -> None:
     with pytest.raises(ParserError):
-        parser._parse_line(1, "hub: roof1 3")  # falta la coordenada y
+        parser._parse_line(1, "hub: roof1 3") 
