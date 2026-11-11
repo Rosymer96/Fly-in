@@ -1,22 +1,32 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from .capacity_resource import CapacityResource
 from .zone import Zone
 
 
 @dataclass
-class Connection:
+class Connection(CapacityResource):
     """A bidirectional link between two zones.
 
     Attributes:
         zone_a: one endpoint of the link.
         zone_b: the other endpoint of the link.
         max_link_capacity: maximum drones that can traverse it at once.
-        current_traversals: ids of the drones currently on the link.
     """
 
     zone_a: Zone
     zone_b: Zone
     max_link_capacity: int
-    current_traversals: set[int] = field(default_factory=set)
+
+    @property
+    def capacity(self) -> int:
+        """Return the maximum drones allowed on the link at once."""
+        return self.max_link_capacity
+
+    @property
+    def label(self) -> str:
+        """Return the link name, used in error messages."""
+        return f"connection {self.zone_a.name}-{self.zone_b.name}"
 
     def other(self, zone: Zone) -> Zone:
         """Given one endpoint, return the opposite one.
@@ -32,8 +42,3 @@ class Connection:
             f"zone {zone.name!r} is not an endpoint of connection "
             f"{self.zone_a.name}-{self.zone_b.name}"
         )
-
-    def has_capacity(self) -> bool:
-        """Return whether one more drone can traverse
-        this connection right now."""
-        return len(self.current_traversals) < self.max_link_capacity

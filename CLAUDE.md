@@ -97,3 +97,15 @@ Fuente: fly-in.subject.pdf v1.6. "p." = página del PDF (no la impresa).
 - Trabaja solo con los archivos y líneas que yo indique con @. No explores el resto del repo sin preguntarme.
 - Respuestas concisas: muéstrame solo lo que cambia (diff), no archivos completos ni código que no se modifica.
 - Antes de ejecutar comandos largos o de leer varios archivos, dime el plan en 3 líneas y espera mi aprobación.
+## Hoja de evaluación (intra)
+- Se evalúa el repo clonado en una carpeta vacía: `make install` debe funcionar desde cero y no debe haber ficheros de más (venv, cachés, tests).
+- Live coding (máx. 10 min): añadir un flag `--capacity-info` que muestre en cada turno `Zone X: Y/Z drones, Connection A-B: Y/Z capacity used`. Por eso:
+  - los argumentos de línea de comandos van en un solo sitio, fácil de ampliar;
+  - la ocupación por zona y el uso por conexión de cada turno deben ser accesibles desde una clase;
+  - la salida y la parte visual van en clases separadas de la lógica;
+  - `make run` debe aceptar flags extra además del mapa.
+- OOP: se mira la separación de clases, la encapsulación (atributos privados o properties) y la herencia donde tenga sentido. El estado va en instancias, y `@staticmethod` solo para utilidades puras.
+- Casos límite: grafo desconectado (sin ruta posible: mensaje claro, nunca crash), capacidades 0 o muy altas y conexiones inválidas.
+- Visual: los colores de `color=` se usan en la visualización. Un color desconocido no debe provocar crash.
+- README: incluir una sección llamada exactamente *Algorithm explanation*.
+- Tengo que saber explicar la complejidad del algoritmo, si cacheo rutas y el uso de memoria.
