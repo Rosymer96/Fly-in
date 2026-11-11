@@ -36,3 +36,5 @@ Thumbs.db
 
 # Simulation logs
 *.log
+# Evaluation sheet
+Hoja_de_evaluación.zip
