@@ -1,3 +1,3 @@
-from .map_parser import MapParser, ParserError
+from .map_parser import MapError, MapFileError, MapParser, ParserError
 
-__all__ = ["MapParser", "ParserError"]
+__all__ = ["MapError", "MapFileError", "MapParser", "ParserError"]

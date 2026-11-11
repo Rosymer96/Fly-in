@@ -5,8 +5,27 @@ from functools import partial
 from models import Zone, Connection, ZoneType, Graph
 
 
-class ParserError(Exception):
-    """Base class for parser errors."""
+class MapError(Exception):
+    """Base class for every error raised while loading a map."""
+
+
+class MapFileError(MapError):
+    """The map file could not be opened or read."""
+
+    def __init__(self, file_path: str, message: str) -> None:
+        """Store the file path and cause, and build the message.
+
+        Args:
+            file_path: path of the map file that failed to load.
+            message: human-readable description of the cause.
+        """
+        self.file_path = file_path
+        self.message = message
+        super().__init__(f"Cannot read map file {file_path!r}: {message}")
+
+
+class ParserError(MapError):
+    """The map file content is invalid."""
 
     def __init__(self, line_number: int, message: str) -> None:
         """Store the failing line and cause, and build the message.
@@ -25,6 +44,10 @@ class MapParser:
 
     def __init__(self) -> None:
         """Create a parser with empty state, ready to read one map file."""
+        self._reset()
+
+    def _reset(self) -> None:
+        """Clear all parsed data so the parser can read a new map."""
         self._zones: dict[str, Zone] = {}
         self._connections: list[Connection] = []
         self._start: Zone | None = None
@@ -283,6 +306,11 @@ class MapParser:
             )
 
         is_hub_boundary = kind in ("start_hub", "end_hub")
+        if is_hub_boundary and zone_type.is_blocked():
+            raise ParserError(
+                line_number,
+                f"{kind} cannot be a blocked zone",
+            )
         if is_hub_boundary:
             max_drones = 1
         else:
@@ -422,13 +450,24 @@ class MapParser:
     ) -> tuple[Graph, int]:
         """Parse a map file and return (graph, nb_drones).
 
+        Any state left by a previous call is discarded first.
+
         Raises:
             ParserError: on any structural or semantic violation.
-            FileNotFoundError: if file_path doesn't exist (not wrapped,
-            since it's a filesystem error, not a format error).
+            MapFileError: if the file cannot be opened or decoded.
         """
+        self._reset()
         line_number = 0
-        with open(file_path, "r", encoding="utf-8") as handle:
-            for line_number, raw_line in enumerate(handle, start=1):
-                self._parse_line(line_number, raw_line)
+        try:
+            with open(file_path, "r", encoding="utf-8") as handle:
+                for line_number, raw_line in enumerate(handle, start=1):
+                    self._parse_line(line_number, raw_line)
+        except OSError as error:
+            raise MapFileError(
+                file_path, error.strerror or str(error)
+            ) from error
+        except UnicodeDecodeError as error:
+            raise MapFileError(
+                file_path, "file is not valid UTF-8 text"
+            ) from error
         return self.finalize(line_number)
