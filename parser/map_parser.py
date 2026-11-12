@@ -55,8 +55,8 @@ class MapParser:
         self._nb_drones: int | None = None
         self._seen_connections: set[frozenset[str]] = set()
 
+    @staticmethod
     def _parse_metadata(
-            self,
             line_number: int,
             raw_metadata: str
     ) -> dict[str, str]:
@@ -101,19 +101,22 @@ class MapParser:
             metadata[key] = value
         return metadata
 
-    def _strip_comments(self, line: str) -> str | None:
-        """Remove comments from a line.
+    @staticmethod
+    def _strip_comments(line: str) -> str | None:
+        """Remove the '#' comment and surrounding whitespace from a line.
 
         Args:
             line: the raw line from the file.
 
         Returns:
-            The line with comments removed.
+            The line without its comment and stripped of whitespace, or
+            None if nothing is left (blank line or comment-only line).
         """
         line = line.split('#', 1)[0].strip()
         return line if line else None
 
-    def _split_metadata(self, line_number: int, line: str) -> tuple[str, str]:
+    @staticmethod
+    def _split_metadata(line_number: int, line: str) -> tuple[str, str]:
         """Separate a line into its body and its bracketed metadata.
 
         Args:
@@ -146,17 +149,24 @@ class MapParser:
             )
         return body.strip(), raw_metadata.strip()
 
+    @staticmethod
     def _split_prefix(
-            self,
             line_number: int,
             body: str,
     ) -> tuple[str, str]:
         """Split off the leading `keyword:` prefix from the rest of the line.
 
-        Returns (prefix, rest) e.g. ("hub", "corridorA 4 3").
+        Args:
+            line_number: current line, used only for error reporting.
+            body: the line without comment or metadata block, e.g.
+                "hub: corridorA 4 3".
+
+        Returns:
+            A tuple (prefix, rest), both stripped, e.g.
+            ("hub", "corridorA 4 3"). Only the first ':' is used to split.
 
         Raises:
-            ParserError: if the line has no recognizable "keyword:" prefix.
+            ParserError: if the line contains no ':' at all.
         """
         if ":" not in body:
             raise ParserError(
@@ -174,6 +184,10 @@ class MapParser:
         Built as a method (not a class-level constant) because the
         start_hub/end_hub/hub variants are bound via functools.partial
         to the same underlying _parse_zone, which needs `self`.
+
+        Returns:
+            A dict from line prefix to a handler taking (line_number,
+            rest, metadata) and returning None.
         """
         return {
             "nb_drones": self._parse_nb_drones,
@@ -192,6 +206,15 @@ class MapParser:
 
         Dispatches to the right handler based on the line's prefix
         keyword. Blank lines and comments are silently skipped.
+
+        Args:
+            line_number: current line (1-based), used for error reporting.
+            raw_line: the line exactly as read from the file.
+
+        Raises:
+            ParserError: on malformed syntax or metadata, if the first
+            meaningful line is not nb_drones, or on an unknown prefix.
+            Errors from the specific handler also propagate.
         """
         cleaned = self._strip_comments(raw_line)
         if cleaned is None:
@@ -214,13 +237,18 @@ class MapParser:
             )
         handler(line_number, rest, metadata)
 
+    @staticmethod
     def _check_known_keys(
-        self,
         line_number: int,
         metadata: dict[str, str],
         allowed: set[str],
     ) -> None:
         """Reject metadata keys that this kind of line does not support.
+
+        Args:
+            line_number: current line, used only for error reporting.
+            metadata: the parsed key-value pairs of the line.
+            allowed: the keys this kind of line accepts.
 
         Raises:
             ParserError: if metadata contains a key not in `allowed`.
@@ -230,17 +258,31 @@ class MapParser:
                 raise ParserError(
                     line_number,
                     f"unknown metadata key {key!r}, allowed: "
-                    f"{', '.join(sorted(allowed))}",
+                    f"{', '.join(sorted(allowed)) or 'none'}",
                 )
 
+    @staticmethod
     def _parse_positive_int(
-        self,
         line_number: int,
         raw_value: str,
         field_name: str
     ) -> int:
-        """Parse and validate a metadata value expected to be a
-        positive integer."""
+        """Parse a string that must be a positive integer (>= 1).
+
+        Only plain digits are accepted: signs, decimals and spaces are
+        rejected.
+
+        Args:
+            line_number: current line, used only for error reporting.
+            raw_value: the text to convert, e.g. "3".
+            field_name: name of the field, used in the error message.
+
+        Returns:
+            The value as an int.
+
+        Raises:
+            ParserError: if the text is not a positive integer.
+        """
         if not re.fullmatch(r"[0-9]+", raw_value) or int(raw_value) < 1:
             raise ParserError(
                 line_number,
@@ -258,7 +300,9 @@ class MapParser:
         """Parse a zone definition line (start_hub, end_hub, or hub).
 
         Args:
+            line_number: current line, used only for error reporting.
             rest: everything after 'keyword:', e.g. "roof1 3 4".
+            metadata: the parsed key-value pairs of the line.
             kind: which keyword introduced this zone — "start_hub",
                 "end_hub", or "hub". Determines whether unlimited_capacity
                 is set and whether this zone is tracked as start/end.
@@ -352,6 +396,11 @@ class MapParser:
     ) -> None:
         """Parse a 'connection: name1-name2 [metadata]' line.
 
+        Args:
+            line_number: current line, used only for error reporting.
+            rest: everything after 'connection:', e.g. "roof1-roof2".
+            metadata: the parsed key-value pairs of the line.
+
         Raises:
             ParserError: on malformed syntax, a reference to an undefined
             zone, or a duplicate connection (a-b same as b-a).
@@ -411,10 +460,17 @@ class MapParser:
     ) -> None:
         """Parse the 'nb_drones: <positive_integer>' line.
 
+        Args:
+            line_number: current line, used only for error reporting.
+            rest: everything after 'nb_drones:', e.g. "5".
+            metadata: the parsed key-value pairs of the line.
+
         Raises:
-            ParserError: if not a positive integer, or if this line
-            appears more than once in the file.
+            ParserError: if not a positive integer, if this line
+            appears more than once in the file, or if it carries any
+            metadata (this line supports none).
         """
+        self._check_known_keys(line_number, metadata, set())
         if self._nb_drones is not None:
             raise ParserError(line_number, "nb_drones defined more than once")
         self._nb_drones = self._parse_positive_int(
@@ -429,6 +485,16 @@ class MapParser:
 
         These checks can't run line-by-line because they depend on
         having seen the entire file first (e.g. "exactly one start_hub").
+
+        Args:
+            line_number: last line read, reported if a check fails.
+
+        Returns:
+            A tuple (graph, nb_drones) with the validated network and the
+            number of drones.
+
+        Raises:
+            ParserError: if nb_drones, start_hub or end_hub is missing.
         """
         if self._nb_drones is None:
             raise ParserError(line_number, "missing nb_drones line")
@@ -451,6 +517,13 @@ class MapParser:
         """Parse a map file and return (graph, nb_drones).
 
         Any state left by a previous call is discarded first.
+
+        Args:
+            file_path: path of the map file to read (UTF-8 text).
+
+        Returns:
+            A tuple (graph, nb_drones) with the validated network and the
+            number of drones.
 
         Raises:
             ParserError: on any structural or semantic violation.
