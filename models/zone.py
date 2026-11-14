@@ -19,7 +19,7 @@ class ZoneType(Enum):
             ValueError: if the zone type is blocked.
         """
         if self is ZoneType.BLOCKED:
-            raise ValueError("blocked zones have no movement cost")
+            raise ValueError("Blocked zones have no movement cost")
         return _MOVEMENT_COSTS[self]
 
     def is_blocked(self) -> bool:
@@ -65,4 +65,4 @@ class Zone(CapacityResource):
     @property
     def label(self) -> str:
         """Return the zone name, used in error messages."""
-        return f"zone {self.name!r}"
+        return f"Zone {self.name!r}"

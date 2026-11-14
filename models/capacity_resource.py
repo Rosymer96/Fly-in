@@ -40,8 +40,11 @@ class CapacityResource(ABC):
             drone_id: id of the drone entering.
 
         Raises:
-            ValueError: if the resource has no free capacity.
+            ValueError: if the drone is already inside, or if the
+                resource has no free capacity.
         """
+        if drone_id in self._occupants:
+            raise ValueError(f"drone {drone_id} is already in {self.label}")
         if not self.has_capacity():
             raise ValueError(f"{self.label} is full")
         self._occupants.add(drone_id)
