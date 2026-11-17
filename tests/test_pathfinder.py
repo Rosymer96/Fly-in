@@ -2,7 +2,7 @@ from pathlib import Path
 
 from models import Graph
 from parser import MapParser
-from pathfinder import Pathfinder
+from pathfinding.pathfinder import Pathfinder
 
 
 def build_graph(tmp_path: Path, body: str) -> Graph:

@@ -32,7 +32,7 @@ class ParserError(MapError):
 
         Args:
             line_number: line of the map file where the error occurred.
-            message: human-readable description of the cause.
+            message: readable description of the cause.
         """
         self.line_number = line_number
         self.message = message
