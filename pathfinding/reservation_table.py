@@ -1,5 +1,8 @@
 from models import Connection, Zone
 
+from .move import Move
+from .path import Path
+
 
 class ReservationTable:
     """Future occupancy of zones and connections, turn by turn."""
@@ -95,3 +98,72 @@ class ReservationTable:
             raise ValueError(f"{connection.label} is full at turn {turn}")
         key = (self._link_key(connection), turn)
         self._link_usage[key] = self.link_usage(connection, turn) + 1
+
+    def is_move_free(self, move: Move) -> bool:
+        """Return whether a whole move fits, without reserving anything.
+
+        Args:
+            move: the move to check.
+
+        Returns:
+            True if the connection is free in every turn of the transit
+            and the destination zone is free when the drone arrives.
+        """
+        links_free = all(
+            self.is_link_free(move.connection, turn)
+            for turn in move.link_turns
+        )
+        return links_free and self.is_zone_free(
+            move.destination, move.arrival_turn
+        )
+
+    def reserve_move(self, move: Move) -> None:
+        """Reserve one drone making a move: the link and the arrival.
+
+        A move costing c turns keeps the connection busy for c turns,
+        and the drone is in the destination at the end of the last one.
+        Either everything is reserved or nothing is.
+
+        Args:
+            move: the move to reserve.
+
+        Raises:
+            ValueError: if the connection or the destination zone has no
+                free capacity in any of the turns needed.
+        """
+        if not self.is_move_free(move):
+            raise ValueError(
+                f"cannot move into {move.destination.label} through "
+                f"{move.connection.label} starting at turn "
+                f"{move.start_turn}"
+            )
+        for turn in move.link_turns:
+            self.reserve_link(move.connection, turn)
+        self.reserve_zone(move.destination, move.arrival_turn)
+
+    def reserve_path(self, path: Path) -> None:
+        """Reserve a whole route: every move and every waiting turn.
+
+        Everything is checked first, so a failure leaves the table as it
+        was. This is sound because a valid Path never claims the same
+        zone or link at the same turn twice.
+
+        Args:
+            path: the route to reserve.
+
+        Raises:
+            ValueError: if any move or waiting turn does not fit.
+        """
+        moves_free = all(self.is_move_free(move) for move in path.moves)
+        waits_free = all(
+            self.is_zone_free(zone, turn) for zone, turn in path.waits
+        )
+        if not (moves_free and waits_free):
+            raise ValueError(
+                f"cannot reserve the path from {path.origin.label} "
+                f"to {path.destination.label}"
+            )
+        for move in path.moves:
+            self.reserve_move(move)
+        for zone, turn in path.waits:
+            self.reserve_zone(zone, turn)
